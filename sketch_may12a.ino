@@ -1,83 +1,112 @@
+#include <PinChangeInterrupt.h>
 #include <LCD_I2C.h>
 #include <Keypad.h>
 
-const byte ROWS = 4; //four rows
-const byte COLS = 4; //three columns
+// Define the LCD address and dimensions
+#define I2C_ADDR 0x27
+#define LCD_COLUMNS 16
+#define LCD_ROWS 2
+
+// Keypad setup
+const byte ROWS = 4; // four rows
+const byte COLS = 4; // four columns
 char keys[ROWS][COLS] = {
-  {'1','2','3','A'},
-  {'4','5','6','B'},
-  {'7','8','9','C'},
-  {'*','0','#','D'}
+  {'1', '2', '3', 'A'},
+  {'4', '5', '6', 'B'},
+  {'7', '8', '9', 'C'},
+  {'*', '0', '#', 'D'}
 };
 
-// connect the pins from right to left to pin 2, 3, 4, 5,6,7,8,9
-byte rowPins[ROWS] = {5,4,3,2}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {9,8,7,6}; //connect to the column pinouts of the keypad
+byte rowPins[ROWS] = {5, 4, 3, 2}; // Row pinouts
+byte colPins[COLS] = {9, 8, 7, 6}; // Column pinouts
 
-Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 
-int reset = 0;
-
-int len;
-
-int state[100];
+int state;
 int led = 13;
+LCD_I2C lcd(I2C_ADDR, LCD_COLUMNS, LCD_ROWS);
 
-LCD_I2C lcd(0x27);
+int size = 0;
+int number[100];
 
 void setup() {
   lcd.begin();
   lcd.backlight();
-  
-  // Configurarea Bluetooth
+
   pinMode(led, OUTPUT);
-  digitalWrite(led, HIGH);
+  digitalWrite(led, LOW);
+ 
   Serial.begin(9600);
 }
 
 void loop() {
-
   char key = keypad.getKey();
-  if (key){
-    if (!reset) {
-      lcd.clear(); // Șterge afișajul LCD
-      lcd.print("Apartamen: ");
-    } 
-    
-    reset = 1;
 
-    lcd.print(key);
-  } else if (!reset) {
-    lcd.clear();
-    lcd.print("Apelati!");
+  if (key) {
+    if (key == 'D') {
+      lcd.clear();
+
+      size = 0; 
+    } else if (key == 'C' && size > 0) {
+      lcd.clear();
+      lcd.print("Suna!");
+
+      call();
+    } else if (key != '*' || key != '#') {
+      lcd.print(key);
+
+      number[size] = key - 48;
+      size++;
+    }
   }
-  
-  // this checks if 4 is pressed, then do something. Here  we print the text but you can control something.
-  if (key == 'D'){
-    reset = 0;
-  }
+}
 
-  len = 0;
+void call() {
+  unsigned long startTime = millis();
+  while (true) { // Check the flag to continue or stop the loop
+    char key = keypad.getKey();
 
-  // Verifică dacă există date disponibile în portul serial
-  while (Serial.available() > 0) { 
-    state[len] = Serial.read();
-    len ++;
-  }
+    if (Serial.available())
+      break;
 
-  if (len > 0 ) {
-    lcd.clear(); // Șterge afișajul LCD
-    for (int i = 0; i < len; i++)
-      Serial.print((char)state[i]);
-  }
+    if (millis() - startTime >= 10000) {
+      lcd.clear();
+      lcd.print("Timeout occurred");
+      delay(1000);
+      lcd.clear();
 
-    if (state[0] == '0') {
-      digitalWrite(led, LOW); // Stinge LED-ul
-
-    } 
-    else if (state[0] == '1') {
-      digitalWrite(led, HIGH); // Aprinde LED-ul
+      size = 0;
+      return;
     }
 
-    delay(500);
+    if(key == 'D') {      
+      size = 0;
+
+      lcd.clear();
+      lcd.print("Apel oprit!");
+
+      delay(1000);
+      lcd.clear();
+
+      return;
+    }
+  }
+
+  size = 0;
+
+  state = Serial.read();
+
+  lcd.clear();
+  if (state == '1') {  
+    lcd.print("Intrati!");
+    digitalWrite(led, HIGH);
+    
+    delay(10000);
+    digitalWrite(led, LOW);
+  } else {
+    lcd.print("Respins!");
+    delay(1000);
+  }
+
+  lcd.clear();
 }
