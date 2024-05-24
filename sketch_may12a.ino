@@ -14,6 +14,8 @@
 #define RST_PIN A0 // Define RST pin as A0
 #define LED_PIN A1 // Define LED pin as A1
 
+#define RELAY_LOCK A2
+
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance.
 
 String allowedUIDs[] = {"33802613"};
@@ -36,7 +38,7 @@ Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
 LCD_I2C lcd(I2C_ADDR, LCD_COLUMNS, LCD_ROWS);
 
 int size = 0;
-int number[100];
+int number = 0;
 
 void setup() {
   Serial.begin(9600);
@@ -51,6 +53,8 @@ void setup() {
   // Pin for lock
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW); // Ensure LED is off
+  
+  pinMode(RELAY_LOCK, OUTPUT);
 }
 
 void loop() {
@@ -61,16 +65,22 @@ void loop() {
       lcd.clear();
 
       size = 0; 
-    } else if (key == 'C' && size > 0) {
+      number = 0;
+    } else if (key == 'C') {
+      if (size == 0)
+        return;
+
       lcd.clear();
-      lcd.print("Suna!");
+      lcd.print("Suna la ");
+      lcd.print(number);
+      lcd.print("!");
 
       Serial.write(9);
       call();
     } else if (key != '*' || key != '#') {
       lcd.print(key);
 
-      number[size] = key - 48;
+      number = number * 10 + (key - '0');
       size++;
     }
   } else {
@@ -95,18 +105,21 @@ void call() {
     if (Serial.available())
       break;
 
-    if (millis() - startTime >= 10000) {
+    if (millis() - startTime >= 20000) {
       lcd.clear();
       lcd.print("Timeout occurred");
       delay(1000);
       lcd.clear();
 
       size = 0;
+      number = 0;
+
       return;
     }
 
     if(key == 'D') {      
       size = 0;
+      number = 0;
 
       Serial.write(8);
 
@@ -121,15 +134,20 @@ void call() {
   }
 
   size = 0;
+  number = 0;
+
   int state = Serial.read();
 
   lcd.clear();
   if (state == '1') {  
     lcd.print("Intrati!");
     digitalWrite(LED_PIN, HIGH);
+    digitalWrite(RELAY_LOCK, HIGH);
     
     delay(10000);
+
     digitalWrite(LED_PIN, LOW);
+    digitalWrite(RELAY_LOCK, LOW);
   } else {
     lcd.print("Respins!");
     delay(1000);
@@ -152,8 +170,12 @@ void open_door_by_card() {
     lcd.print("Intrati!");
 
     digitalWrite(LED_PIN, HIGH);  // Turn on LED
+    digitalWrite(RELAY_LOCK, HIGH);
+
     delay(10000);                 // Keep LED on for 10 seconds
+    
     digitalWrite(LED_PIN, LOW);   // Turn off LED
+    digitalWrite(RELAY_LOCK, LOW);
 
     lcd.clear();
   }
