@@ -52,34 +52,32 @@ int size = 0;
 int number = 0;
 
 // Password and the apartments that are registered
-const char* password = "1234"; // Password for adding / removing apartments
+const char* password = "2389"; // Password for adding / removing apartments
 
 int apartments[MAX_APARTMENTS]; // Array to store apartment IDs
 int apartmentCount = 0; // Number of apartments
 
 void setup() {
-  Serial.begin(9600);
-
+  // Setup for LCD
   lcd.begin();
   lcd.backlight();
 
+  // Setup for RFID module
   Serial.begin(9600);   // Initialize serial communications with the PC
   SPI.begin();          // Init SPI bus
   mfrc522.PCD_Init();   // Init MFRC522
 
-  // Pin for lock
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW); // Ensure LED is off
-  
-  pinMode(RELAY_LOCK, OUTPUT);
+  // Setup for Relay module and lock
+  pinMode(LED_PIN, OUTPUT);    // Pin for lock
+  digitalWrite(LED_PIN, LOW);  // Ensure LED is off
+  pinMode(RELAY_LOCK, OUTPUT); // Pin for Relay module control
 
   // Setup for EEPROM memory management
-  // Check for magic number
-  int magic;
-  EEPROM.get(EEPROM_MAGIC_ADDR, magic);
+  int magic; // number used to check if the EEPROM memory was initialize or not
 
   // If the EEPROM memory does not have magic number in first position
   // initialize this memory
+  EEPROM.get(EEPROM_MAGIC_ADDR, magic);
   if (magic != MAGIC_NUMBER)
     initializeEEPROM();
 
@@ -90,68 +88,50 @@ void setup() {
 void loop() {
   char key = keypad.getKey();
 
+  // If the one of the keys are pressed do / write something
   if (key) {
-    if (key == 'D') {
-      lcd.clear();
+    // 'D' = delete
+    // This command clears the curent  apartment number from memory
+    // and clears the lcd display
+    if (key == 'D')
+      clear();
 
-      size = 0; 
-      number = 0;
-
-    } else if (key == 'C') {
+    // 'C' = call
+    // Calls the curent apartment number
+    // If the apartment is not register it displays 'Neinregistrat'
+    // Else it calls the 'call' comand
+    if (key == 'C') {
+      // if there is no apartment number do nothing
       if (size == 0)
         return;
 
-      int i;
-      for (i = 0; i < apartmentCount; i++)
-        if (number == apartments[i])
-          break;
-
-      if (i == apartmentCount) {
+      if (!check_ap(number)) {
         lcd.clear();
         lcd.print("Neinregistrat!");
+        
         delay(3000);
-        lcd.clear();
-      
-        size = 0;
-        number = 0;
+        
+        clear();
 
         return;
       }
 
-      lcd.clear();
-      lcd.print("Suna la ");
-      lcd.print(number);
-      lcd.print("!");
+      call(number);
+    } 
 
-      Serial.write(number);
-      call();
-
-    } else if (key == 'A') {
+    // 'A' = add
+    // Adds an apartment to the list stored in the EEPROM memory
+    if (key == 'A') {
+      // If an apartment number is displayed do nothing
+      // Most probably the key was pressed by accident in thi instance
       if (size != 0) 
         return;
 
-      lcd.clear();
-      lcd.print("Introdu parola:");
-      lcd.setCursor(0, 1);
-      String enteredPassword = "";
-      
-      while (enteredPassword.length() < 4) {
-        char key = keypad.getKey();
-        if (key) {
-          enteredPassword += key;
-          lcd.print('*'); // Mask the password input
-        }
-      }
-      
-      // If password is not correct return
-      if (strcmp(enteredPassword.c_str(), password) != 0) {
-        lcd.clear();
-        lcd.print("Parola incorecta!");
-        delay(2000);
-
+      // Request password and check wheter is correct or not
+      if(!request_password())
         return;
-      }
 
+      // Display request for new apartment
       lcd.clear();
       lcd.print("Introdu apartament:");
       lcd.setCursor(0, 1);
@@ -173,12 +153,33 @@ void loop() {
       delay(1000);
       lcd.clear();
 
-      addApartment(apartmentID.toInt());
+      if (!check_ap(apartmentID.toInt())) {
+        lcd.clear();
+        lcd.print("Apartamentul deja");
+        lcd.setCursor(0, 1);
+        lcd.print("exista!");
+        
+        delay(3000);
+        
+        clear();
 
-    } else if (key == '*') {
+        return;
+      }
+
+      // Calling function for adding apartment in to EEPROM memory
+      addApartment(apartmentID.toInt());
+    } 
+
+    // Function for selectivelly removing an apartment from the list
+    if (key == '*') {
       if (size != 0) 
         return;
 
+      // Request password and check wheter is correct or not
+      if(!request_password())
+        return;
+
+      // Display request for apartment to be removed
       lcd.clear();
       lcd.print("Introdu apartament:");
       lcd.setCursor(0, 1);
@@ -200,19 +201,28 @@ void loop() {
       lcd.clear();
 
       removeApartment(apartmentID.toInt());
+    } 
 
-    } else if (key == '#') {
+    // Function to remove all apartments from memroy
+    if (key == '#') {
       if (size != 0) 
         return;
 
-      removeAllApartments();
+      // Request password and check wheter is correct or not
+      if(!request_password())
+        return;
 
-    } else if (key == 'B') {
+      removeAllApartments();
+    } 
+    
+    // Functions to show all the apartments stored
+    if (key == 'B') {
       if (size != 0) 
         return;
 
       lcd.clear();
 
+      // If there are no apartments show message
       if (apartmentCount == 0) {
         lcd.print("Nu exista");
         lcd.setCursor(0, 1);
@@ -229,17 +239,23 @@ void loop() {
         lcd.setCursor(0, 1);
         lcd.print(apartments[i]);
 
-        delay(1000); // Display each apartment for 1 second
+        // Display each apartment for 1 second
+        delay(1000); 
       }
       
       delay(2000);
       lcd.clear();
-    } else {
+    } 
+    
+    // Add the digit represented by the key to the number
+    // and display it
+    if (isdigit(key)) {
       lcd.print(key);
 
       number = number * 10 + (key - '0');
       size++;
     }  
+
   } else {
     if (!mfrc522.PICC_IsNewCardPresent()) {
       return; // Exit the loop if no new card is present
@@ -254,33 +270,99 @@ void loop() {
   }
 }
 
-void call() {
+// Clear the curent number from RAM (?) and clears the scren
+void clear() {
+  size = 0;
+  number = 0;
+
+  lcd.clear();
+}
+
+// Checks wheter an apartment is in the memory or not
+int check_ap(int ap_number) {
+  // Going trough all the registered apartments 
+  int i;
+  for (i = 0; i < apartmentCount; i++)
+    if (number == apartments[i])
+      break;
+
+  if (i == apartmentCount && apartmentCount != 0) 
+    return 0;
+
+  return 1;      
+}
+
+int request_password() {
+  // Display request
+  lcd.clear();
+  lcd.print("Introdu parola:");
+  lcd.setCursor(0, 1);
+
+  // Read the given password
+  String enteredPassword = "";
+  while (enteredPassword.length() < 4) {
+    char key = keypad.getKey();
+    if (key) {
+      enteredPassword += key;
+      
+      // Mask the password input
+      lcd.print('*'); 
+    }
+  }
+  
+  // If password is not correct return
+  if (strcmp(enteredPassword.c_str(), password) != 0) {
+    lcd.clear();
+    lcd.print("Parola incorecta!");
+    delay(2000);
+
+    lcd.clear();
+    return 0;
+  }
+
+  return 1;
+}
+
+// Calls and waits for response
+// Prints a message based on the response
+void call(int ap_number) {
+  // Displaying a message indicating to where the call is intended
+  lcd.clear();
+  lcd.print("Suna la ");
+  lcd.print(ap_number);
+  lcd.print("!");
+
+  // Send the number to the aplication
+  Serial.write(ap_number);
+
   unsigned long startTime = millis();
-  while (true) { // Check the flag to continue or stop the loop
+  // Check the flag to continue or stop the loop
+  while (true) { 
     char key = keypad.getKey();
 
     if (Serial.available())
       break;
 
+    // The call last 20 sec, it the time expiers stop
     if (millis() - startTime >= 20000) {
       lcd.clear();
       lcd.print("Timeout occurred");
+      
       delay(1000);
-      lcd.clear();
 
-      size = 0;
-      number = 0;
-
+      clear();
+      
       return;
     }
 
+    // The caller can choose to stop whenever he wants
+    // By pressing 'D' he stops the call
+    // Sending '0' to the app
     if(key == 'D') {      
-      size = 0;
-      number = 0;
-
       Serial.write(0);
+      
+      clear();
 
-      lcd.clear();
       lcd.print("Apel oprit!");
 
       delay(1000);
@@ -289,13 +371,11 @@ void call() {
       return;
     }
   }
-
-  size = 0;
-  number = 0;
-
+  
   int response = Serial.read();
 
-  lcd.clear();
+  clear();
+
   if (response == '1') {  
     lcd.print("Intrati!");
     digitalWrite(LED_PIN, HIGH);
@@ -349,6 +429,7 @@ bool isUIDAllowed(String uid) {
   return false;
 }
 
+// Intialize EEPROM by puitng the magic number
 void initializeEEPROM() {
   EEPROM.put(EEPROM_MAGIC_ADDR, MAGIC_NUMBER);
 
@@ -360,12 +441,15 @@ void initializeEEPROM() {
 void addApartment(int newApartmentID) {
   if(apartmentCount >= MAX_APARTMENTS) {
     lcd.print("Numar maxim atins.");
+    lcd.clear();
+
     return;
   }
 
   EEPROM.put(EEPROM_START_ADDR + apartmentCount * sizeof(int), newApartmentID);
 
-  apartments[apartmentCount] = newApartmentID; // Add to array
+  // Add to array
+  apartments[apartmentCount] = newApartmentID; 
   apartmentCount++;
   
   EEPROM.put(EEPROM_COUNT_ADDR, apartmentCount);
@@ -375,6 +459,7 @@ void addApartment(int newApartmentID) {
   lcd.clear();
 }
 
+// Removes apartment from memory
 void removeApartment(int apartmentID) {
   for (int i = 0; i < apartmentCount; i++) {
     if (apartments[i] == apartmentID) {
